@@ -1,0 +1,200 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { useSocket } from '../context/SocketContext';
+import { useTheme } from '../context/ThemeContext';
+import { FiSearch } from 'react-icons/fi';
+
+const UserList = ({ onUserSelect, selectedChat }) => {
+  const [users, setUsers] = useState([]);
+  const [chats, setChats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const { socket } = useSocket();
+  const { isDark } = useTheme();
+
+  useEffect(() => {
+    fetchChats();
+    fetchUsers();
+  }, []);
+
+  useEffect(() => {
+    if (socket) {
+      socket.on('userStatus', ({ userId, status }) => {
+        setUsers(prevUsers =>
+          prevUsers.map(user =>
+            user._id === userId ? { ...user, isOnline: status === 'online' } : user
+          )
+        );
+      });
+
+      socket.on('newMessage', (message) => {
+        updateLastMessage(message);
+      });
+    }
+
+    return () => {
+      if (socket) {
+        socket.off('userStatus');
+        socket.off('newMessage');
+      }
+    };
+  }, [socket]);
+
+  const fetchChats = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get('http://localhost:5000/api/chat/chats', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setChats(response.data);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching chats:', error);
+      setLoading(false);
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get('http://localhost:5000/api/users', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setUsers(response.data);
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    }
+  };
+
+  const createChat = async (userId) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post(
+        'http://localhost:5000/api/chat',
+        { userId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const newChat = response.data;
+      setChats(prevChats => [...prevChats, newChat]);
+      onUserSelect(newChat);
+    } catch (error) {
+      console.error('Error creating chat:', error);
+    }
+  };
+
+  const updateLastMessage = (message) => {
+    setChats(prevChats =>
+      prevChats.map(chat =>
+        chat._id === message.chat
+          ? { ...chat, lastMessage: message }
+          : chat
+      )
+    );
+  };
+
+  const filteredChats = chats.filter(chat => {
+    const otherUser = chat.participants.find(
+      p => p._id !== localStorage.getItem('userId')
+    );
+    return otherUser?.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+           chat.lastMessage?.content?.toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
+  return (
+    <>
+      {loading ? (
+        <div className="flex items-center justify-center h-full">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+        </div>
+      ) : (
+        <div className={`overflow-y-auto h-[calc(100vh-5rem)] transition-colors duration-200 ${
+          isDark ? 'bg-dark-default' : 'bg-white'
+        } rounded-lg shadow-lg`}>
+          {/* Search Bar */}
+          <div className={`p-4 sticky top-0 ${
+            isDark ? 'bg-dark-default border-dark-lighter' : 'bg-white border-light-darker'
+          } border-b z-10 backdrop-blur-lg bg-opacity-80`}>
+            <div className={`flex items-center space-x-2 px-4 py-2 rounded-full ${
+              isDark ? 'bg-dark-lighter' : 'bg-light-lighter'
+            }`}>
+              <FiSearch className="w-5 h-5 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search messages..."
+                className={`w-full bg-transparent focus:outline-none ${
+                  isDark ? 'text-white placeholder-gray-400' : 'text-gray-700 placeholder-gray-500'
+                }`}
+              />
+            </div>
+          </div>
+
+          {/* Chat List */}
+          <div className="space-y-1 p-2">
+            {filteredChats.map(chat => {
+              const otherUser = chat.participants.find(
+                p => p._id !== localStorage.getItem('userId')
+              );
+              
+              return (
+                <button
+                  key={chat._id}
+                  onClick={() => onUserSelect(chat)}
+                  className={`w-full p-3 flex items-center space-x-3 rounded-xl transition-all duration-200 ${
+                    selectedChat?._id === chat._id
+                      ? isDark
+                        ? 'bg-dark-lighter'
+                        : 'bg-primary-light bg-opacity-10'
+                      : isDark
+                      ? 'hover:bg-dark-lighter'
+                      : 'hover:bg-light-lighter'
+                  }`}
+                >
+                  {/* User Avatar */}
+                  <div className="relative">
+                    <img
+                      src={otherUser?.profilePic || `https://ui-avatars.com/api/?name=${otherUser?.username}`}
+                      alt={otherUser?.username}
+                      className="w-12 h-12 rounded-full object-cover"
+                    />
+                    {otherUser?.isOnline && (
+                      <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-white rounded-full"></span>
+                    )}
+                  </div>
+
+                  {/* Chat Info */}
+                  <div className="flex-1 text-left">
+                    <div className="flex justify-between items-start">
+                      <h3 className={`font-semibold truncate ${
+                        isDark ? 'text-white' : 'text-gray-900'
+                      }`}>
+                        {otherUser?.username}
+                      </h3>
+                      {chat.lastMessage && (
+                        <span className={`text-xs ${
+                          isDark ? 'text-gray-400' : 'text-gray-500'
+                        }`}>
+                          {new Date(chat.lastMessage.createdAt).toLocaleDateString()}
+                        </span>
+                      )}
+                    </div>
+                    {chat.lastMessage && (
+                      <p className={`text-sm truncate ${
+                        isDark ? 'text-gray-400' : 'text-gray-500'
+                      }`}>
+                        {chat.lastMessage.content}
+                      </p>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+export default UserList;
