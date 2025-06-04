@@ -3,23 +3,30 @@ import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useSocket } from '../context/SocketContext';
-import { FiUserPlus, FiUserCheck, FiUserX, FiUser, FiBell } from 'react-icons/fi';
+import { FiUserPlus, FiUserCheck, FiUserX, FiUser, FiSearch, FiMessageSquare } from 'react-icons/fi';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const FriendsManager = () => {
+const FriendsManager = ({ onChatStart }) => {
   const [activeTab, setActiveTab] = useState('suggestions');
   const [users, setUsers] = useState([]);
   const [pendingRequests, setPendingRequests] = useState([]);
   const [friends, setFriends] = useState([]);
-  const [loading, setLoading] = useState(true);  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const { user } = useAuth();
   const { isDark } = useTheme();
   const { socket } = useSocket();
 
   useEffect(() => {
+    // Initial data load
     fetchUsers();
     fetchFriendRequests();
     fetchFriends();
+  }, []);
 
+  useEffect(() => {
     if (socket) {
       // Listen for incoming friend requests
       socket.on('friendRequest', (data) => {
@@ -30,12 +37,20 @@ const FriendsManager = () => {
       socket.on('friendRequestAccepted', (data) => {
         setFriends(prev => [...prev, data.user]);
         // Remove from pending if it was our request
-        setPendingRequests(prev => prev.filter(req => req.sender._id !== data.user._id));
+        setPendingRequests(prev => 
+          prev.filter(req => req.sender._id !== data.user._id)
+        );
+        // Remove from suggestions if present
+        setUsers(prev =>
+          prev.filter(user => user._id !== data.user._id)
+        );
       });
 
       // Listen for rejected friend requests
       socket.on('friendRequestRejected', (data) => {
-        setPendingRequests(prev => prev.filter(req => req._id !== data.requestId));
+        setPendingRequests(prev => 
+          prev.filter(req => req._id !== data.requestId)
+        );
       });
 
       return () => {
@@ -46,15 +61,48 @@ const FriendsManager = () => {
     }
   }, [socket]);
 
+  // Debounced search effect
+  useEffect(() => {
+    const debounceTimeout = setTimeout(() => {
+      if (searchQuery) {
+        searchUsers(searchQuery);
+      } else {
+        setSearchResults([]);
+        // If search is cleared, fetch suggestions again
+        fetchUsers();
+      }
+    }, 300);
+
+    return () => clearTimeout(debounceTimeout);
+  }, [searchQuery]);
+
+  const searchUsers = async (query) => {
+    try {
+      setSearchLoading(true);
+      const token = localStorage.getItem('token');
+      const response = await axios.get(`http://localhost:5000/api/friends/search?query=${encodeURIComponent(query)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setSearchResults(response.data);
+    } catch (error) {
+      console.error('Error searching users:', error);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
   const fetchUsers = async () => {
     try {
+      setSearchLoading(true);
       const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/api/users/suggestions', {
+      const response = await axios.get('http://localhost:5000/api/friends/suggestions', {
         headers: { Authorization: `Bearer ${token}` }
       });
       setUsers(response.data);
     } catch (error) {
       console.error('Error fetching user suggestions:', error);
+    } finally {
+      setSearchLoading(false);
     }
   };
 
@@ -91,7 +139,10 @@ const FriendsManager = () => {
         { receiverId: userId },
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      fetchUsers(); // Refresh the suggestions list
+      // Remove user from suggestions list
+      setUsers(prev => prev.filter(user => user._id !== userId));
+      // Also remove from search results if present
+      setSearchResults(prev => prev.filter(user => user._id !== userId));
     } catch (error) {
       console.error('Error sending friend request:', error);
     }
@@ -104,10 +155,37 @@ const FriendsManager = () => {
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      fetchFriendRequests();
-      fetchFriends();
+      
+      // Remove the request from pending immediately for better UX
+      setPendingRequests(prev => prev.filter(req => req._id !== requestId));
+      
+      if (action === 'accept') {
+        // Refresh friends list to get the new friend
+        fetchFriends();
+      }
     } catch (error) {
       console.error(`Error ${action}ing friend request:`, error);
+      // Refresh lists in case of error to ensure correct state
+      fetchFriendRequests();
+      fetchFriends();
+    }
+  };
+
+  const createOrOpenChat = async (friendId) => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.post(
+        'http://localhost:5000/api/chat/chat',
+        { userId: friendId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      // Call the parent component's handler to switch to chat view
+      if (onChatStart) {
+        onChatStart(response.data);
+      }
+    } catch (error) {
+      console.error('Error creating/opening chat:', error);
     }
   };
 
@@ -150,31 +228,42 @@ const FriendsManager = () => {
           )}
         </div>
       </div>
-      {type === 'suggestion' && (
-        <button
-          onClick={() => sendFriendRequest(user._id)}
-          className="flex items-center space-x-1 px-3 py-1 rounded-full bg-primary-light text-primary-dark hover:bg-primary-dark hover:text-white transition-colors duration-200"
-        >
-          <FiUserPlus />
-          <span>Follow</span>
-        </button>
-      )}
-      {type === 'request' && (
-        <div className="flex space-x-2">
+      <div className="flex space-x-2">
+        {type === 'suggestion' && (
           <button
-            onClick={() => handleRequest(user._id, 'accept')}
-            className="p-2 rounded-full bg-green-100 text-green-600 hover:bg-green-600 hover:text-white transition-colors duration-200"
+            onClick={() => sendFriendRequest(user._id)}
+            className="flex items-center space-x-1 px-3 py-1 rounded-full bg-primary-light text-primary-dark hover:bg-primary-dark hover:text-white transition-colors duration-200"
           >
-            <FiUserCheck className="w-5 h-5" />
+            <FiUserPlus />
+            <span>Follow</span>
           </button>
+        )}
+        {type === 'friend' && (
           <button
-            onClick={() => handleRequest(user._id, 'reject')}
-            className="p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition-colors duration-200"
+            onClick={() => createOrOpenChat(user._id)}
+            className="flex items-center space-x-1 px-3 py-1 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-600 hover:text-white transition-colors duration-200"
           >
-            <FiUserX className="w-5 h-5" />
+            <FiMessageSquare />
+            <span>Chat</span>
           </button>
-        </div>
-      )}
+        )}
+        {type === 'request' && (
+          <div className="flex space-x-2">
+            <button
+              onClick={() => handleRequest(user._id, 'accept')}
+              className="p-2 rounded-full bg-green-100 text-green-600 hover:bg-green-600 hover:text-white transition-colors duration-200"
+            >
+              <FiUserCheck className="w-5 h-5" />
+            </button>
+            <button
+              onClick={() => handleRequest(user._id, 'reject')}
+              className="p-2 rounded-full bg-red-100 text-red-600 hover:bg-red-600 hover:text-white transition-colors duration-200"
+            >
+              <FiUserX className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+      </div>
     </motion.div>
   );
 
@@ -224,7 +313,18 @@ const FriendsManager = () => {
         ))}
       </div>
 
-      {loading ? (
+      <div className="flex items-center mb-4">
+        <FiSearch className="w-5 h-5 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Search..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className={`ml-2 p-2 rounded-md border w-full ${isDark ? 'border-gray-700 bg-dark-lighter text-white placeholder-gray-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-400'}`}
+        />
+      </div>
+
+      {searchLoading ? (
         <div className="flex justify-center items-center h-48">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-dark"></div>
         </div>
@@ -239,7 +339,15 @@ const FriendsManager = () => {
           >
             {activeTab === 'suggestions' && (
               <div className="space-y-4">
-                {users.length > 0 ? (
+                {searchQuery ? (
+                  searchResults.length > 0 ? (
+                    searchResults.map(user => (
+                      <UserCard key={user._id} user={user} type="suggestion" />
+                    ))
+                  ) : (
+                    <NoContent message="No users found matching your search." />
+                  )
+                ) : users.length > 0 ? (
                   users.map(user => (
                     <UserCard key={user._id} user={user} type="suggestion" />
                   ))
@@ -250,10 +358,13 @@ const FriendsManager = () => {
             )}
 
             {activeTab === 'requests' && (
-              <div className="space-y-4">
-                {pendingRequests.length > 0 ? (
+              <div className="space-y-4">                {pendingRequests.length > 0 ? (
                   pendingRequests.map(request => (
-                    <UserCard key={request._id} user={request.sender} type="request" />
+                    <UserCard 
+                      key={request._id} 
+                      user={{ ...request.sender, requestId: request._id }} 
+                      type="request" 
+                    />
                   ))
                 ) : (
                   <NoContent message="No pending friend requests." />

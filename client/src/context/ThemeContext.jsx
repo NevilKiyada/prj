@@ -15,6 +15,8 @@ export const ThemeProvider = ({ children }) => {
     localStorage.theme === 'dark' || 
     (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)
   );
+  
+  console.log('ThemeProvider initialized with isDark:', isDark);
 
   const toggleTheme = () => {
     setIsDark(!isDark);
@@ -59,9 +61,22 @@ export const ThemeProvider = ({ children }) => {
     page: 'min-h-screen bg-gradient-to-br from-light-lighter via-primary-50 to-accent-50 dark:from-dark-deepest dark:via-primary-950 dark:to-accent-950',
     container: 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'
   };
-
+  // Add theme utility methods
+  const theme = {
+    getElevation: (level = 1) => {
+      return isDark 
+        ? `bg-dark-lighter/90 backdrop-blur-lg border border-white/10 shadow-xl` 
+        : `bg-white/90 backdrop-blur-lg border border-gray-200 shadow-lg`;
+    },
+    getGlassStyle: (opacity = 0.7) => {
+      return isDark 
+        ? `bg-dark-lighter/80 backdrop-blur-md border-white/10` 
+        : `bg-white/80 backdrop-blur-md border-gray-200/50`;
+    }
+  };
+  
   return (
-    <ThemeContext.Provider value={{ isDark, toggleTheme, animations, styles }}>
+    <ThemeContext.Provider value={{ isDark, toggleTheme, animations, styles, theme }}>
       {children}
     </ThemeContext.Provider>
   );

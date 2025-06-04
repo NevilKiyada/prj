@@ -49,17 +49,30 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    // Find user with password field explicitly included
+    
+    // Validate inputs
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email and password are required' });
+    }// Find user with password field explicitly included
     const user = await User.findOne({ email }).select('+password');
     if (!user) {
       return res.status(400).json({ message: 'Invalid credentials' });
     }
 
+    // Check if password is defined in the user document
+    if (!user.password) {
+      return res.status(400).json({ message: 'Password reset required. Please contact support.' });
+    }
+
     // Check password
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid credentials' });
+    try {
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return res.status(400).json({ message: 'Invalid credentials' });
+      }
+    } catch (error) {
+      console.error('Password comparison error:', error);
+      return res.status(400).json({ message: 'Invalid credentials format' });
     }
     
     // Generate token
@@ -84,11 +97,9 @@ exports.getProfile = async (req, res) => {
     
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
-    }
-
-    res.json({ 
+    }    res.json({ 
       user: {
-        id: user._id,
+        _id: user._id, // Use _id instead of id to match MongoDB and client expectation
         username: user.username,
         email: user.email,
         profilePic: user.profilePic,

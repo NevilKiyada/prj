@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Chat = require('../models/Chat');
+const Message = require('../models/Message');
 const FriendRequest = require('../models/FriendRequest');
 
 let io;
@@ -64,10 +65,72 @@ const socketManager = (socketIo) => {
       // Join user to their personal room
       socket.join(socket.userId);
 
-      // Join all chat rooms the user is part of
-      const userChats = await Chat.find({ participants: socket.userId });
-      userChats.forEach(chat => {
-        socket.join(chat._id.toString());
+      // Handle chat join events
+      socket.on('joinChat', (chatId) => {
+        socket.join(chatId);
+      });
+
+      // Handle chat leave events
+      socket.on('leaveChat', (chatId) => {
+        socket.leave(chatId);
+      });
+
+      // Handle new messages
+      socket.on('sendMessage', async ({ chatId, content, messageType = 'text', fileUrl }) => {
+        try {
+          // Verify user is part of the chat
+          const chat = await Chat.findOne({
+            _id: chatId,
+            participants: socket.userId
+          });
+
+          if (!chat) {
+            return;
+          }
+
+          // Create and save the message
+          const message = await Message.create({
+            chat: chatId,
+            sender: socket.userId,
+            content,
+            messageType,
+            fileUrl,
+            readBy: [socket.userId]
+          });
+
+          // Update chat's last message
+          await Chat.findByIdAndUpdate(chatId, {
+            lastMessage: message._id
+          });
+
+          // Populate sender details and emit to the chat room
+          const populatedMessage = await Message.findById(message._id)
+            .populate('sender', 'username email profilePic');
+
+          io.to(chatId).emit('newMessage', populatedMessage);
+
+          // Send notifications to offline participants
+          chat.participants.forEach(participantId => {
+            if (participantId.toString() !== socket.userId) {
+              const receiverSocket = getUserSocket(participantId);
+              if (!receiverSocket) {
+                // TODO: Handle offline notifications
+                console.log(`User ${participantId} is offline, queuing notification`);
+              }
+            }
+          });
+        } catch (error) {
+          console.error('Error sending message:', error);
+        }
+      });
+
+      // Handle typing indicators
+      socket.on('typing', (chatId) => {
+        socket.to(chatId).emit('userTyping', { chatId, userId: socket.userId });
+      });
+
+      socket.on('stopTyping', (chatId) => {
+        socket.to(chatId).emit('userStopTyping', { chatId, userId: socket.userId });
       });
 
       // Listen for friend request events
@@ -177,11 +240,12 @@ const socketManager = (socketIo) => {
           console.error('Error handling disconnect:', error);
         }
       });
+
     } catch (error) {
       console.error('Error in socket connection:', error);
     }
   });
-  // Return utility functions and references
+
   return {
     getUserSocket,
     getOnlineUsers: () => onlineUsers,

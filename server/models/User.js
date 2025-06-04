@@ -51,10 +51,10 @@ const userSchema = new mongoose.Schema({
   toObject: { virtuals: true }
 });
 
-// Virtual field to check if the user is friends with another user
-userSchema.virtual('isFriendsWith').get(function(userId) {
+// Method to check if the user is friends with another user
+userSchema.methods.isFriendsWith = function(userId) {
   return this.friends.includes(userId);
-});
+};
 
 // Method to check if users are mutual followers
 userSchema.methods.areMutualFollowers = function(userId) {

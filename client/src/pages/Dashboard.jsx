@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -21,17 +21,47 @@ import FriendsManager from '../components/FriendsManager';
 import Settings from '../components/Settings';
 
 const Dashboard = () => {
+  console.log('Dashboard component rendering - start');
+  
+  // Set up state with defaults to prevent rendering errors
   const [selectedChat, setSelectedChat] = useState(null);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [showRightPanel, setShowRightPanel] = useState(true);
-  const { user, logout } = useAuth();
-  const { isDark, toggleTheme } = useTheme();
+  
+  // Get auth and theme context
+  const auth = useAuth();
+  const theme = useTheme();
+  
+  // Destructure safely with fallbacks
+  const user = auth?.user || {};
+  const logout = auth?.logout || (() => console.log('Logout not available'));
+  const token = auth?.token;
+  const isDark = theme?.isDark || false;
+  const toggleTheme = theme?.toggleTheme || (() => console.log('Theme toggle not available'));
+  const styles = theme?.styles || {};
+
+  console.log('Dashboard auth state:', {
+    userExists: !!user, 
+    tokenExists: !!token,
+    isDark: isDark
+  });
+  
+  // Debug effect to check if the component is receiving user data
+  useEffect(() => {
+    console.log('Dashboard rendered with user:', user);
+    console.log('User token available:', !!token);
+  }, [user, token]);
 
   const handleUserSelect = (chat) => {
     setSelectedChat(chat);
     if (window.innerWidth < 768) {
       setActiveTab('chats');
     }
+  };
+
+  const handleChatStart = (chat) => {
+    setSelectedChat(chat);
+    setActiveTab('chats');
   };
 
   const NavLink = ({ icon: Icon, label, tab }) => (
@@ -51,15 +81,29 @@ const Dashboard = () => {
       <Icon className="w-6 h-6" />
       <span className="ml-3 font-medium">{label}</span>
     </motion.button>
-  );
+  );  console.log('Rendering Dashboard layout');
+  
+  // Add a fallback if required data is missing
+  if (!user || typeof isDark === 'undefined') {
+    console.log('Rendering Dashboard fallback - missing critical data');
+    return (
+      <div className="min-h-screen w-full bg-gradient-to-br from-blue-50 via-violet-50 to-pink-50 flex items-center justify-center">
+        <div className="text-center p-8 bg-white/70 backdrop-blur-lg rounded-2xl shadow-xl border border-black/5">
+          <h2 className="text-2xl font-bold mb-4 text-gray-900">Loading Dashboard...</h2>
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 mx-auto"></div>
+        </div>
+      </div>
+    );
+  }
+  
   return (
-    <div className={`h-screen ${
+    <div className={`min-h-screen w-full ${
       isDark
         ? 'bg-gradient-to-br from-gray-900 via-slate-800 to-gray-900'
         : 'bg-gradient-to-br from-blue-50 via-violet-50 to-pink-50'
     }`}>
       <div className="h-full max-w-8xl mx-auto px-4 py-6">
-        <div className="h-full grid grid-cols-1 md:grid-cols-7 lg:grid-cols-10 gap-6">
+        <div className="min-h-[calc(100vh-4rem)] grid grid-cols-1 md:grid-cols-7 lg:grid-cols-10 gap-6">
           {/* Left Sidebar - Profile & Navigation */}
           <motion.aside
             initial={{ x: -20, opacity: 0 }}
@@ -73,17 +117,16 @@ const Dashboard = () => {
             } shadow-xl`}
           >
             {/* Profile Section */}
-            <div className="p-6 text-center border-b border-gray-200/10">
-              <div className="relative inline-block">
+            <div className="p-6 text-center border-b border-gray-200/10">              <div className="relative inline-block">
                 <img
                   src={user?.profilePic || '/default-avatar.svg'}
-                  alt={user?.username}
+                  alt={user?.username || 'User'}
                   className="w-24 h-24 rounded-full mx-auto object-cover ring-4 ring-primary-500/20"
                 />
                 <div className="absolute bottom-1 right-1 w-4 h-4 bg-green-400 rounded-full border-4 border-white dark:border-gray-900" />
               </div>
               <h2 className={`mt-4 text-lg font-semibold ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                {user?.username}
+                {user?.username || 'Welcome!'}
               </h2>
               <p className={`text-sm ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
                 Online
@@ -273,7 +316,7 @@ const Dashboard = () => {
                     </h2>
                   </div>
                   <div className="h-[calc(100%-4rem)] overflow-hidden">
-                    <FriendsManager />
+                    <FriendsManager onChatStart={handleChatStart} />
                   </div>
                 </motion.div>
               )}              {activeTab === 'stats' && (

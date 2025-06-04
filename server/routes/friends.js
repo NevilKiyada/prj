@@ -4,10 +4,42 @@ const auth = require('../middleware/auth');
 const FriendRequest = require('../models/FriendRequest');
 const User = require('../models/User');
 
+// Search users by username
+router.get('/search', auth, async (req, res) => {
+  try {
+    const { query } = req.query;
+    if (!query) {
+      return res.status(400).json({ message: 'Search query is required' });
+    }
+
+    const currentUser = await User.findById(req.userId);
+    if (!currentUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Create regex for case-insensitive search
+    const searchRegex = new RegExp(query, 'i');
+
+    // Find users whose username matches the search query
+    // Exclude current user and their friends
+    const users = await User.find({
+      _id: { $nin: [req.userId, ...currentUser.friends] },
+      username: searchRegex
+    })
+    .select('username profilePic isOnline lastActive')
+    .limit(10);
+
+    res.json(users);
+  } catch (error) {
+    console.error('Error searching users:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 // Get user's friends list
 router.get('/', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).populate({
+    const user = await User.findById(req.userId).populate({
       path: 'friends',
       select: 'username profilePic isOnline lastActive'
     });
@@ -25,7 +57,7 @@ router.get('/', auth, async (req, res) => {
 router.get('/requests', auth, async (req, res) => {
   try {
     const requests = await FriendRequest.find({
-      receiver: req.user.id,
+      receiver: req.userId,
       status: 'pending'
     }).populate('sender', 'username profilePic isOnline');
     res.json(requests);
@@ -38,7 +70,7 @@ router.get('/requests', auth, async (req, res) => {
 // Get friend suggestions (users who are not friends and have no pending requests)
 router.get('/suggestions', auth, async (req, res) => {
   try {
-    const currentUser = await User.findById(req.user.id);
+    const currentUser = await User.findById(req.userId);
     if (!currentUser) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -46,13 +78,13 @@ router.get('/suggestions', auth, async (req, res) => {
     // Get IDs to exclude (current user, friends, and users with pending requests)
     const requests = await FriendRequest.find({
       $or: [
-        { sender: req.user.id },
-        { receiver: req.user.id }
+        { sender: req.userId },
+        { receiver: req.userId }
       ]
     });
 
     const excludeIds = new Set([
-      req.user.id,
+      req.userId,
       ...currentUser.friends,
       ...requests.map(r => r.sender.toString()),
       ...requests.map(r => r.receiver.toString())
@@ -75,7 +107,7 @@ router.post('/request', auth, async (req, res) => {
   try {
     const { receiverId } = req.body;
 
-    if (receiverId === req.user.id) {
+    if (receiverId === req.userId) {
       return res.status(400).json({ message: 'Cannot send friend request to yourself' });
     }
 
@@ -88,8 +120,8 @@ router.post('/request', auth, async (req, res) => {
     // Check if request already exists
     const existingRequest = await FriendRequest.findOne({
       $or: [
-        { sender: req.user.id, receiver: receiverId },
-        { sender: receiverId, receiver: req.user.id }
+        { sender: req.userId, receiver: receiverId },
+        { sender: receiverId, receiver: req.userId }
       ]
     });
 
@@ -98,28 +130,31 @@ router.post('/request', auth, async (req, res) => {
     }
 
     // Check if they are already friends
-    const areFriends = receiver.friends.includes(req.user.id);
+    const areFriends = receiver.friends.includes(req.userId);
     if (areFriends) {
       return res.status(400).json({ message: 'Users are already friends' });
     }
 
     // Create and save the friend request
     const request = new FriendRequest({
-      sender: req.user.id,
+      sender: req.userId,
       receiver: receiverId
     });
     await request.save();
 
     // Get sender info for real-time notification
-    const sender = await User.findById(req.user.id).select('username profilePic isOnline');
+    const sender = await User.findById(req.userId).select('username profilePic isOnline');
 
     // Notify the receiver via socket
-    const receiverSocket = req.getUserSocket?.(receiverId);
-    if (receiverSocket) {
-      receiverSocket.emit('friendRequest', {
-        _id: request._id,
-        sender: sender
-      });
+    const io = req.app.get('io');
+    if (io) {
+      const receiverSocket = io.getUserSocket?.(receiverId.toString());
+      if (receiverSocket) {
+        receiverSocket.emit('friendRequest', {
+          _id: request._id,
+          sender
+        });
+      }
     }
 
     res.json(request);
@@ -139,7 +174,7 @@ router.post('/request/:requestId/:action', auth, async (req, res) => {
       return res.status(404).json({ message: 'Friend request not found' });
     }
 
-    if (request.receiver.toString() !== req.user.id) {
+    if (request.receiver.toString() !== req.userId) {
       return res.status(403).json({ message: 'Not authorized' });
     }
 
@@ -159,40 +194,52 @@ router.post('/request/:requestId/:action', auth, async (req, res) => {
       await Promise.all([sender.save(), receiver.save()]);
 
       // Notify both users via sockets
-      const senderSocket = req.getUserSocket?.(request.sender.toString());
-      const receiverSocket = req.getUserSocket?.(request.receiver.toString());
+      const io = req.app.get('io');
+      if (io) {
+        const senderSocket = io.getUserSocket?.(sender._id.toString());
+        const receiverSocket = io.getUserSocket?.(receiver._id.toString());
 
-      if (senderSocket) {
-        senderSocket.emit('friendRequestAccepted', {
-          user: {
-            _id: receiver._id,
-            username: receiver.username,
-            profilePic: receiver.profilePic,
-            isOnline: receiver.isOnline
-          }
-        });
+        if (senderSocket) {
+          senderSocket.emit('friendRequestAccepted', {
+            user: {
+              _id: receiver._id,
+              username: receiver.username,
+              profilePic: receiver.profilePic,
+              isOnline: receiver.isOnline
+            }
+          });
+        }
+
+        if (receiverSocket) {
+          receiverSocket.emit('friendRequestAccepted', {
+            user: {
+              _id: sender._id,
+              username: sender.username,
+              profilePic: sender.profilePic,
+              isOnline: sender.isOnline
+            }
+          });
+        }
       }
 
-      if (receiverSocket) {
-        receiverSocket.emit('friendRequestAccepted', {
-          user: {
-            _id: sender._id,
-            username: sender.username,
-            profilePic: sender.profilePic,
-            isOnline: sender.isOnline
-          }
-        });
-      }
+      // Remove the request after accepting
+      await FriendRequest.findByIdAndDelete(requestId);
 
       res.json({ message: 'Friend request accepted', request });
     } else if (action === 'reject') {
       request.status = 'rejected';
       await request.save();
 
-      // Notify sender of rejection
-      const senderSocket = req.getUserSocket?.(request.sender.toString());
-      if (senderSocket) {
-        senderSocket.emit('friendRequestRejected', { requestId });
+      // Delete the rejected request
+      await FriendRequest.findByIdAndDelete(requestId);
+
+      // Notify sender of rejection via socket
+      const io = req.app.get('io');
+      if (io) {
+        const senderSocket = io.getUserSocket?.(request.sender.toString());
+        if (senderSocket) {
+          senderSocket.emit('friendRequestRejected', { requestId });
+        }
       }
 
       res.json({ message: 'Friend request rejected', request });

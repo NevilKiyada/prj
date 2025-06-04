@@ -10,49 +10,74 @@ export const AuthProvider = ({ children }) => {
 
   // Configure axios defaults
   axios.defaults.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-  if (token) {
-    axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-  }
+  
+  useEffect(() => {
+    if (token) {
+      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    } else {
+      delete axios.defaults.headers.common['Authorization'];
+    }
+  }, [token]);
 
   useEffect(() => {
     const initializeAuth = async () => {
-      const storedToken = localStorage.getItem('token');
-      if (storedToken) {
-        setToken(storedToken);
-        try {
-          const response = await axios.get('/api/auth/me', {
-            headers: { Authorization: `Bearer ${storedToken}` }
-          });
-          setUser(response.data.user);
-        } catch (error) {
-          console.error('Error fetching user:', error);
-          logout();
+      try {
+        const storedToken = localStorage.getItem('token');
+        console.log('Initializing auth with stored token:', !!storedToken);
+        
+        if (storedToken) {
+          setToken(storedToken);
+          axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+          
+          const response = await axios.get('/api/auth/me');
+          
+          console.log('User data retrieved:', response.data);
+          
+          if (response.data.user) {
+            setUser(response.data.user);
+          } else {
+            throw new Error('No user data in response');
+          }
         }
+      } catch (error) {
+        console.error('Error fetching user:', error);
+        // Clear auth data if authentication fails
+        localStorage.removeItem('token');
+        localStorage.removeItem('userId');
+        setToken(null);
+        setUser(null);
+        delete axios.defaults.headers.common['Authorization'];
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     initializeAuth();
   }, []);
+
   const login = async (email, password) => {
     try {
-      console.log('Attempting to login at:', axios.defaults.baseURL);
-      const response = await axios.post('/api/auth/login', {
+      console.log('Attempting to login at:', axios.defaults.baseURL);      const response = await axios.post('/api/auth/login', {
         email,
         password
       });
 
       const { token: newToken, user: userData } = response.data;
       
+      console.log('Login successful, user data:', userData);
+      
+      // Set auth state
       setToken(newToken);
       setUser(userData);
       
+      // Store in localStorage
       localStorage.setItem('token', newToken);
       localStorage.setItem('userId', userData._id); // Changed to _id which is MongoDB's standard id field
       
+      // Update axios default headers
       axios.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
       
-      return { success: true };
+      return { success: true, userData };
     } catch (error) {
       console.error('Login error:', error);
       
@@ -127,18 +152,31 @@ export const AuthProvider = ({ children }) => {
         message: error.response?.data?.message || 'Error updating profile'
       };
     }
-  };
+  };  // For debugging
+  console.log('AuthContext state - user:', !!user, 'token:', !!token);
+
+  const isAuthenticated = Boolean(user && token);
 
   const value = {
     user,
     token,
     loading,
+    isAuthenticated,
+    setUser,
+    setToken,
     login,
     register,
     logout,
-    updateProfile,
-    isAuthenticated: !!token
+    updateProfile
   };
+  
+  // Add additional logging
+  console.log('AuthContext value:', { 
+    hasUser: !!user, 
+    hasToken: !!token, 
+    isLoading: loading, 
+    isAuthenticated: !!user && !!token 
+  });
 
   if (loading) {
     return (

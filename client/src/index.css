@@ -90,3 +90,17 @@
     clip-path: polygon(0 10px, 10px 0, calc(100% - 10px) 0, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0 calc(100% - 10px));
   }
 }
+
+/* Ensure proper height inheritance */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Ensure proper height for app container */
+#root > div {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}

@@ -1,9 +1,8 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 import { ThemeProvider } from './context/ThemeContext';
-import { useAuth } from './context/AuthContext';
-import { useTheme } from './context/ThemeContext';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -11,83 +10,120 @@ import Dashboard from './pages/Dashboard';
 
 // Protected Route wrapper
 const ProtectedRoute = ({ children }) => {
-  const { user, loading } = useAuth();
-  const { styles } = useTheme();
+  const { user, token, loading, isAuthenticated } = useAuth();
+  const location = useLocation();
   
+  // Debug output
+  console.log('ProtectedRoute State:', { 
+    hasUser: !!user, 
+    hasToken: !!token, 
+    isLoading: loading,
+    isAuthenticated,
+    pathname: location.pathname
+  });
+
+  // Show loading state
   if (loading) {
     return (
-      <div className={`${styles.page} flex items-center justify-center`}>
-        <div className="relative">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-violet-50 to-pink-50">
+        <div className="p-8 bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
         </div>
       </div>
     );
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
+  // Check authentication
+  if (!isAuthenticated) {
+    console.log('Not authenticated, redirecting to login');
+    return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+  // Render the protected content
   return <Layout>{children}</Layout>;
 };
 
 // Public Route wrapper (redirects to dashboard if already logged in)
 const PublicRoute = ({ children }) => {
-  const { user, loading } = useAuth();
-  const { styles } = useTheme();
+  const { isAuthenticated, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return (
-      <div className={`${styles.page} flex items-center justify-center`}>
-        <div className="relative">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-violet-50 to-pink-50">
+        <div className="p-8 bg-white/80 backdrop-blur-lg rounded-2xl shadow-xl">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
         </div>
       </div>
     );
   }
 
-  if (user) {
+  if (isAuthenticated) {
     return <Navigate to="/dashboard" replace />;
   }
 
   return children;
 };
 
+// App Routes component that uses the auth context
+const AppRoutes = () => {
+  console.log('AppRoutes rendering');
+  const location = useLocation();
+  console.log('Current location:', location);
+
+  return (
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          <PublicRoute>
+            <Login />
+          </PublicRoute>
+        }
+      />
+      <Route
+        path="/register"
+        element={
+          <PublicRoute>
+            <Register />
+          </PublicRoute>
+        }
+      />
+      <Route
+        path="/dashboard/*"
+        element={
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+    </Routes>
+  );
+};
+
+// Wrap routes with required providers
+const AppWithProviders = () => {
+  console.log('AppWithProviders rendering');
+  return (
+    <AuthProvider>
+      <SocketProvider>
+        <div className="app-container min-h-screen bg-gradient-to-br from-violet-100 via-pink-100 to-yellow-100 dark:from-violet-950 dark:via-pink-950 dark:to-yellow-950">
+          <AppRoutes />
+        </div>
+      </SocketProvider>
+    </AuthProvider>
+  );
+};
+
 function App() {
+  console.log('App component rendering');
+  
   return (
     <Router>
       <ThemeProvider>
-        <AuthProvider>
-          <SocketProvider>
-            <Routes>
-              <Route
-                path="/login"
-                element={
-                  <PublicRoute>
-                    <Login />
-                  </PublicRoute>
-                }
-              />
-              <Route
-                path="/register"
-                element={
-                  <PublicRoute>
-                    <Register />
-                  </PublicRoute>
-                }
-              />
-              <Route
-                path="/dashboard"
-                element={
-                  <ProtectedRoute>
-                    <Dashboard />
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            </Routes>
-          </SocketProvider>
-        </AuthProvider>
+        <AppWithProviders />
       </ThemeProvider>
     </Router>
   );

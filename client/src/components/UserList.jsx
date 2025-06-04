@@ -141,8 +141,8 @@ const UserList = ({ onUserSelect, selectedChat }) => {
             : 'hover:bg-black/5'
         }`}
       >
-        <div className="relative flex-shrink-0">
-          <img            src={user.profilePic || '/src/assets/default-avatar.png'}
+        <div className="relative flex-shrink-0">          <img            
+            src={user.profilePic || '/default-avatar.svg'}
             alt={user.username}
             className="w-12 h-12 rounded-full object-cover ring-2 ring-offset-2 ring-offset-transparent transition-all duration-200"
             style={{
