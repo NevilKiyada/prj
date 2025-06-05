@@ -23,6 +23,7 @@ const ChatWindow = ({ chat }) => {
   const [showActions, setShowActions] = useState(false);
   const messagesEndRef = useRef(null);
   const messageInputRef = useRef(null);
+  const messageContainerRef = useRef(null);
   let typingTimeout;
   const { socket } = useSocket();
   const { isDark } = useTheme();
@@ -47,59 +48,53 @@ const ChatWindow = ({ chat }) => {
 
   useEffect(() => {
     if (socket) {
-      socket.on('newMessage', (message) => {
-        console.log('New message received:', message);
-        if (message.chat === chat._id) {
-          setMessages(prev => {
-            // Find any optimistic version of this message to replace
-            const optimisticIndex = prev.findIndex(m => 
-              m.isOptimistic && m.content === message.content && 
-              m.sender._id === message.sender._id
-            );
+      socket.on('newMessage', handleNewMessage);
+      socket.on('userTyping', handleUserTyping);
+      socket.on('userStopTyping', handleUserStopTyping);
 
-            if (optimisticIndex !== -1) {
-              // Replace the optimistic message with the real one
-              const newMessages = [...prev];
-              newMessages[optimisticIndex] = message;
-              return newMessages;
-            }
-
-            // If no optimistic message found and this message doesn't already exist
-            const messageExists = prev.some(m => m._id === message._id);
-            if (!messageExists) {
-              return [...prev, message];
-            }
-            return prev;
-          });
-          scrollToBottom();
-        }
-      });
-
-      socket.on('userTyping', ({ chatId, userId }) => {
-        if (chatId === chat._id && userId !== localStorage.getItem('userId')) {
-          setTyping(true);
-        }
-      });
-
-      socket.on('userStopTyping', ({ chatId, userId }) => {
-        if (chatId === chat._id && userId !== localStorage.getItem('userId')) {
-          setTyping(false);
-        }
-      });
-
-      // Make sure to clean up listeners
       return () => {
         socket.off('newMessage');
         socket.off('userTyping');
         socket.off('userStopTyping');
       };
     }
-  }, [socket, chat._id]);
+  }, [socket]);
 
-  useEffect(() => {
-    // Scroll to bottom when messages change
-    scrollToBottom();
-  }, [messages]);
+  const handleNewMessage = (message) => {
+    if (message.chat === chat._id) {
+      setMessages(prev => {
+        const optimisticIndex = prev.findIndex(m => 
+          m.isOptimistic && m.content === message.content && 
+          m.sender._id === message.sender._id
+        );
+
+        if (optimisticIndex !== -1) {
+          const newMessages = [...prev];
+          newMessages[optimisticIndex] = message;
+          return newMessages;
+        }
+
+        const messageExists = prev.some(m => m._id === message._id);
+        if (!messageExists) {
+          return [...prev, message];
+        }
+        return prev;
+      });
+      scrollToBottom();
+    }
+  };
+
+  const handleUserTyping = ({ chatId, userId }) => {
+    if (chatId === chat._id && userId !== localStorage.getItem('userId')) {
+      setTyping(true);
+    }
+  };
+
+  const handleUserStopTyping = ({ chatId, userId }) => {
+    if (chatId === chat._id && userId !== localStorage.getItem('userId')) {
+      setTyping(false);
+    }
+  };
 
   const fetchMessages = async () => {
     try {
@@ -109,16 +104,9 @@ const ChatWindow = ({ chat }) => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       
-      console.log('Fetched messages:', response.data);
       const { messages: newMessages, pagination } = response.data;
       
-      // For page 1, replace all messages, for subsequent pages prepend
-      if (page === 1) {
-        setMessages(newMessages);
-      } else {
-        setMessages(prev => [...newMessages, ...prev]);
-      }
-      
+      setMessages(prev => page === 1 ? newMessages : [...newMessages, ...prev]);
       setHasMore(page < pagination.pages);
       setLoading(false);
     } catch (error) {
@@ -138,10 +126,7 @@ const ChatWindow = ({ chat }) => {
         messageType: 'text'
       };
 
-      // Generate a temporary ID for the optimistic message
       const tempId = 'temp-' + Date.now();
-      
-      // Optimistically add message to UI
       const optimisticMessage = {
         _id: tempId,
         chat: chat._id,
@@ -159,14 +144,10 @@ const ChatWindow = ({ chat }) => {
       scrollToBottom();
       setNewMessage('');
 
-      // Emit via socket
       socket.emit('sendMessage', messageData);
-
-      // Clear input and focus
       messageInputRef.current?.focus();
     } catch (error) {
       console.error('Error sending message:', error);
-      // Remove optimistic message on error
       setMessages(prev => prev.filter(msg => !msg.isOptimistic));
     }
   };
@@ -186,8 +167,10 @@ const ChatWindow = ({ chat }) => {
   };
 
   const getMessageTime = (date) => {
-    const messageDate = new Date(date);
-    return messageDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return new Date(date).toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
   };
 
   const formatDate = (date) => {
@@ -213,9 +196,13 @@ const ChatWindow = ({ chat }) => {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] max-h-[calc(100vh-4rem)]">
-      {/* Chat header */}
-      <div className={`flex-none px-4 py-3 ${isDark ? 'bg-gray-800' : 'bg-white'} border-b ${isDark ? 'border-gray-700' : 'border-gray-200'} flex items-center justify-between`}>
+    <div className="flex flex-col h-full max-h-[calc(100vh-4rem)] bg-gradient-to-b from-transparent to-black/5">
+      {/* Chat Header */}
+      <div className={`flex-none px-4 py-3 ${
+        isDark ? 'bg-gray-800/50' : 'bg-white/50'
+      } backdrop-blur-sm border-b ${
+        isDark ? 'border-gray-700' : 'border-gray-200'
+      } flex items-center justify-between`}>
         <div className="flex items-center space-x-3">
           <div className="relative">
             <img
@@ -238,23 +225,23 @@ const ChatWindow = ({ chat }) => {
         </div>
       </div>
 
-      {/* Messages area with fixed height and scrolling */}
+      {/* Messages Area */}
       <div 
-        className={`flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent p-4 space-y-4 ${
-          isDark ? 'bg-gray-900' : 'bg-gray-50'
-        }`}
-        style={{ 
-          height: 'calc(100% - 140px)', // Account for header and input area
-          overflowY: 'auto',
-          scrollBehavior: 'smooth'
-        }}
+        ref={messageContainerRef}
+        className={`flex-1 overflow-y-auto scrollbar-thin ${
+          isDark 
+            ? 'scrollbar-thumb-gray-600 scrollbar-track-transparent' 
+            : 'scrollbar-thumb-gray-300 scrollbar-track-transparent'
+        } p-4 space-y-4`}
       >
-        {/* Load more button */}
+        {/* Load More Button */}
         {hasMore && (
           <button
             onClick={() => setPage(p => p + 1)}
             className={`w-full text-center py-2 text-sm font-medium ${
-              isDark ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'
+              isDark 
+                ? 'text-blue-400 hover:text-blue-300' 
+                : 'text-blue-600 hover:text-blue-700'
             } hover:underline transition-colors duration-200`}
           >
             Load previous messages
@@ -273,7 +260,9 @@ const ChatWindow = ({ chat }) => {
                 {showDate && (
                   <div className="flex justify-center my-4">
                     <span className={`px-4 py-1 rounded-full text-sm ${
-                      isDark ? 'bg-gray-800 text-gray-400' : 'bg-gray-200 text-gray-600'
+                      isDark 
+                        ? 'bg-gray-800/50 text-gray-400' 
+                        : 'bg-gray-200/50 text-gray-600'
                     }`}>
                       {formatDate(message.createdAt)}
                     </span>
@@ -285,17 +274,15 @@ const ChatWindow = ({ chat }) => {
                   className={`flex ${isOwnMessage ? 'justify-end' : 'justify-start'}`}
                 >
                   <div className={`group max-w-[70%] ${isOwnMessage ? 'ml-auto' : 'mr-auto'}`}>
-                    <div
-                      className={`rounded-2xl px-4 py-2 ${
-                        isOwnMessage
-                          ? isDark 
-                            ? 'bg-blue-600 text-white' 
-                            : 'bg-blue-500 text-white'
-                          : isDark
-                          ? 'bg-gray-800 text-white'
-                          : 'bg-white text-gray-900'
-                      } shadow-sm`}
-                    >
+                    <div className={`rounded-2xl px-4 py-2 ${
+                      isOwnMessage
+                        ? isDark 
+                          ? 'bg-blue-600/90 text-white' 
+                          : 'bg-blue-500/90 text-white'
+                        : isDark
+                        ? 'bg-gray-800/90 text-white'
+                        : 'bg-white/90 text-gray-900'
+                    } backdrop-blur-sm shadow-sm`}>
                       <p className="break-words">{message.content}</p>
                       <p className={`text-xs mt-1 ${
                         isOwnMessage
@@ -314,25 +301,34 @@ const ChatWindow = ({ chat }) => {
           })}
         </div>
 
-        {/* Typing indicator */}
-        {typing && (
-          <div className={`flex items-center space-x-2 ${
-            isDark ? 'text-gray-400' : 'text-gray-600'
-          }`}>
-            <div className="flex space-x-1">
-              <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce"></div>
-              <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce delay-100"></div>
-              <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce delay-200"></div>
-            </div>
-            <span className="text-sm">{otherUser?.username} is typing...</span>
-          </div>
-        )}
+        {/* Typing Indicator */}
+        <AnimatePresence>
+          {typing && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              className={`flex items-center space-x-2 ${
+                isDark ? 'text-gray-400' : 'text-gray-600'
+              }`}
+            >
+              <div className="flex space-x-1">
+                <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce"></div>
+                <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce delay-100"></div>
+                <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce delay-200"></div>
+              </div>
+              <span className="text-sm">{otherUser?.username} is typing...</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
         
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Message input - fixed at bottom */}
-      <div className={`flex-none p-4 ${isDark ? 'bg-gray-800' : 'bg-white'} border-t ${
+      {/* Message Input */}
+      <div className={`flex-none p-4 ${
+        isDark ? 'bg-gray-800/50' : 'bg-white/50'
+      } backdrop-blur-sm border-t ${
         isDark ? 'border-gray-700' : 'border-gray-200'
       }`}>
         <form onSubmit={handleSendMessage} className="flex items-center space-x-4">
@@ -367,8 +363,8 @@ const ChatWindow = ({ chat }) => {
             placeholder="Type a message..."
             className={`flex-1 rounded-full px-4 py-2 ${
               isDark 
-                ? 'bg-gray-700 text-white placeholder-gray-400 focus:bg-gray-600' 
-                : 'bg-gray-100 text-gray-900 placeholder-gray-500 focus:bg-gray-200'
+                ? 'bg-gray-700/50 text-white placeholder-gray-400 focus:bg-gray-600/50' 
+                : 'bg-gray-100/50 text-gray-900 placeholder-gray-500 focus:bg-gray-200/50'
             } focus:outline-none transition-colors duration-200`}
           />
           
@@ -378,11 +374,11 @@ const ChatWindow = ({ chat }) => {
             className={`p-3 rounded-full transition-colors duration-200 ${
               newMessage.trim()
                 ? isDark
-                  ? 'bg-blue-600 text-white hover:bg-blue-700'
-                  : 'bg-blue-500 text-white hover:bg-blue-600'
+                  ? 'bg-blue-600/90 text-white hover:bg-blue-700/90'
+                  : 'bg-blue-500/90 text-white hover:bg-blue-600/90'
                 : isDark
-                ? 'bg-gray-700 text-gray-400'
-                : 'bg-gray-200 text-gray-400'
+                ? 'bg-gray-700/50 text-gray-400'
+                : 'bg-gray-200/50 text-gray-400'
             }`}
           >
             <FiSend className="w-5 h-5" />

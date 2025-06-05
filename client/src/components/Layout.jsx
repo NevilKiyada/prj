@@ -20,15 +20,11 @@ const Layout = ({ children }) => {
   const { isDark, toggleTheme, animations, theme, styles } = useTheme();
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
   
   React.useEffect(() => {
-    console.log('Layout rendered with user:', user);
-    
     if (!user) {
-      console.log('No user data in Layout, will redirect to login');
       navigate('/login');
-    } else {
-      console.log('User is present in Layout:', user);
     }
   }, [user, navigate]);
 
@@ -38,19 +34,16 @@ const Layout = ({ children }) => {
   };
 
   return (
-    <div className={`min-h-screen transition-colors duration-500 ${
-      isDark 
-        ? 'dark bg-gradient-to-br from-gray-900 via-slate-800 to-gray-900' 
-        : 'bg-gradient-to-br from-blue-50 via-violet-50 to-pink-50'
-    } bg-noise`}>
+    <div className="min-h-screen w-full flex flex-col">
+      {/* Top Navigation Bar */}
       <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${
         isDark 
           ? 'border-dark-lighter/20 bg-dark-glass' 
           : 'border-light-darker/10 bg-light-glass'
       } border-b backdrop-blur-lg`}>
-        <div className="max-w-7xl mx-auto px-4">
+        <div className="max-w-8xl mx-auto px-4">
           <div className="flex justify-between h-16">
-            {/* Logo & Brand */}
+            {/* Logo & Brand - Always visible */}
             <div className="flex items-center space-x-3">
               <motion.div
                 whileHover={{ scale: 1.1, rotate: 15 }}
@@ -65,10 +58,22 @@ const Layout = ({ children }) => {
               </motion.div>
               <motion.h1 
                 {...animations.slideIn}
-                className={`text-xl font-bold ${styles.gradientText}`}
+                className={`text-xl font-bold ${styles.gradientText} hidden sm:block`}
               >
                 ChatVibe
               </motion.h1>
+            </div>
+
+            {/* Mobile Menu Button */}
+            <div className="flex md:hidden">
+              <button
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className={`p-2 rounded-lg transition-colors ${
+                  isDark ? 'text-gray-400 hover:text-white' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <Menu className="w-6 h-6" />
+              </button>
             </div>
 
             {/* Desktop Search Bar */}
@@ -89,9 +94,8 @@ const Layout = ({ children }) => {
               </div>
             </div>
 
-            {/* User Controls */}
-            <div className="flex items-center space-x-1 md:space-x-4">
-              {/* Theme Toggle */}
+            {/* Desktop User Controls */}
+            <div className="hidden md:flex items-center space-x-4">
               <motion.button
                 {...animations.fadeIn}
                 onClick={toggleTheme}
@@ -106,7 +110,6 @@ const Layout = ({ children }) => {
                 )}
               </motion.button>
               
-              {/* User Menu */}
               <div className="relative">
                 <motion.button
                   {...animations.fadeIn}
@@ -146,8 +149,68 @@ const Layout = ({ children }) => {
         </div>
       </nav>
 
-      {/* Main Content */}
-      <main className="pt-16">
+      {/* Mobile Menu */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className={`md:hidden fixed top-16 left-0 right-0 z-40 ${
+              isDark ? 'bg-dark-glass' : 'bg-light-glass'
+            } backdrop-blur-lg border-b ${
+              isDark ? 'border-dark-lighter/20' : 'border-light-darker/10'
+            }`}
+          >
+            <div className="px-4 py-3 space-y-4">
+              <div className="relative">
+                <Search className={`absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 ${
+                  isDark ? 'text-gray-400' : 'text-gray-500'
+                }`} />
+                <input
+                  type="search"
+                  placeholder="Search..."
+                  className={`w-full pl-10 pr-4 py-2 rounded-full ${
+                    isDark
+                      ? 'bg-dark-lighter/50 text-white placeholder-gray-400'
+                      : 'bg-white/50 text-gray-900 placeholder-gray-500'
+                  } focus:outline-none focus:ring-2 focus:ring-primary-500/20`}
+                />
+              </div>
+              
+              <button
+                onClick={toggleTheme}
+                className={`flex items-center space-x-2 w-full px-4 py-2 rounded-lg ${
+                  isDark ? 'text-gray-300' : 'text-gray-700'
+                } hover:bg-white/10 transition-colors`}
+              >
+                {isDark ? (
+                  <>
+                    <Sun className="w-5 h-5" />
+                    <span>Light Mode</span>
+                  </>
+                ) : (
+                  <>
+                    <Moon className="w-5 h-5" />
+                    <span>Dark Mode</span>
+                  </>
+                )}
+              </button>
+              
+              <button
+                onClick={handleLogout}
+                className={`flex items-center space-x-2 w-full px-4 py-2 rounded-lg text-red-500 hover:bg-red-500/10 transition-colors`}
+              >
+                <LogOut className="w-5 h-5" />
+                <span>Sign out</span>
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Main Content Area */}
+      <main className="flex-1 pt-16">
         {children}
       </main>
     </div>
