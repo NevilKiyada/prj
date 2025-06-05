@@ -17,7 +17,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const Layout = ({ children }) => {
   const { user, logout } = useAuth();
-  const { isDark, toggleTheme, animations, theme, styles } = useTheme();
+  const { isDark, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false);
@@ -43,7 +43,7 @@ const Layout = ({ children }) => {
       } border-b backdrop-blur-lg`}>
         <div className="max-w-8xl mx-auto px-4">
           <div className="flex justify-between h-16">
-            {/* Logo & Brand - Always visible */}
+            {/* Logo & Brand */}
             <div className="flex items-center space-x-3">
               <motion.div
                 whileHover={{ scale: 1.1, rotate: 15 }}
@@ -57,8 +57,11 @@ const Layout = ({ children }) => {
                 } transition-colors`} />
               </motion.div>
               <motion.h1 
-                {...animations.slideIn}
-                className={`text-xl font-bold ${styles.gradientText} hidden sm:block`}
+                className={`text-xl font-bold bg-gradient-to-r ${
+                  isDark 
+                    ? 'from-primary-400 to-accent-400 text-transparent bg-clip-text' 
+                    : 'from-primary-600 to-accent-600 text-transparent bg-clip-text'
+                } hidden sm:block`}
               >
                 ChatVibe
               </motion.h1>
@@ -97,24 +100,32 @@ const Layout = ({ children }) => {
             {/* Desktop User Controls */}
             <div className="hidden md:flex items-center space-x-4">
               <motion.button
-                {...animations.fadeIn}
-                onClick={toggleTheme}
-                className={`p-2 rounded-lg ${styles.glassmorphism} hover:bg-white/20 transition-colors`}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
+                onClick={toggleTheme}
+                className={`p-2 rounded-lg ${
+                  isDark 
+                    ? 'bg-dark-lighter/50 text-gray-300 hover:text-white' 
+                    : 'bg-gray-100/50 text-gray-700 hover:text-gray-900'
+                } transition-colors`}
               >
                 {isDark ? (
-                  <Sun className="w-5 h-5 text-gray-300" />
+                  <Sun className="w-5 h-5" />
                 ) : (
-                  <Moon className="w-5 h-5 text-gray-700" />
+                  <Moon className="w-5 h-5" />
                 )}
               </motion.button>
               
               <div className="relative">
                 <motion.button
-                  {...animations.fadeIn}
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
                   onClick={() => setIsMenuOpen(!isMenuOpen)}
-                  className={`flex items-center space-x-2 p-2 rounded-lg ${styles.glassmorphism} hover:bg-white/20 transition-colors`}
+                  className={`flex items-center space-x-2 p-2 rounded-lg ${
+                    isDark 
+                      ? 'bg-dark-lighter/50 text-white hover:bg-dark-lighter' 
+                      : 'bg-gray-100/50 text-gray-900 hover:bg-gray-200/50'
+                  } transition-colors`}
                 >
                   <img
                     src={user?.avatar || '/default-avatar.png'}
@@ -129,12 +140,20 @@ const Layout = ({ children }) => {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 10 }}
-                      className={`absolute right-0 mt-2 w-48 rounded-xl ${styles.glassmorphism} shadow-xl overflow-hidden`}
+                      className={`absolute right-0 mt-2 w-48 rounded-xl ${
+                        isDark 
+                          ? 'bg-dark-lighter/90 border-gray-700' 
+                          : 'bg-white/90 border-gray-200'
+                      } backdrop-blur-sm border shadow-lg overflow-hidden`}
                     >
                       <div className="py-1">
                         <button
                           onClick={handleLogout}
-                          className="flex items-center w-full px-4 py-2 text-sm hover:bg-white/10 transition-colors"
+                          className={`flex items-center w-full px-4 py-2 text-sm ${
+                            isDark 
+                              ? 'text-gray-300 hover:bg-gray-700' 
+                              : 'text-gray-700 hover:bg-gray-100'
+                          } transition-colors`}
                         >
                           <LogOut className="w-4 h-4 mr-2" />
                           Sign out
